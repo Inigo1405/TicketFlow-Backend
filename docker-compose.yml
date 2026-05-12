@@ -1,0 +1,12 @@
+services: 
+
+  api-gateway:
+    container_name: api-gateway
+    build: ./api-gateway
+    restart: on-failure
+    ports:
+      - "8000:8000"
+
+
+volumes:
+  postgres_data:
