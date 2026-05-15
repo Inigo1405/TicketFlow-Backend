@@ -1,12 +1,83 @@
-services: 
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+  postgres-users:
+    image: postgres:16-alpine
+    container_name: postgres-users
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: users_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_users_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+
+  postgres-tickets:
+    image: postgres:16-alpine
+    container_name: postgres-tickets
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tickets_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_tickets_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  # ── Services ──────────────────────────────────────────────────────────────
+  auth-service:
+    container_name: auth-service
+    build: ./auth-service
+    restart: on-failure
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-users:5432/users_db
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres-users
+      - redis
+
+  ticket-service:
+    container_name: ticket-service
+    build: ./ticket-service
+    restart: on-failure
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-tickets:5432/tickets_db
+    ports:
+      - "8002:8002"
+    depends_on:
+      - postgres-tickets
 
   api-gateway:
     container_name: api-gateway
     build: ./api-gateway
     restart: on-failure
+    env_file: .env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      TICKET_SERVICE_URL: http://ticket-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8003
+      REDIS_URL: redis://redis:6379
     ports:
-      - "8000:8000"
-
+      - "3000:8000"   # frontend calls http://localhost:3000/api
+    depends_on:
+      - auth-service
+      - ticket-service
+      - redis
 
 volumes:
-  postgres_data:
+  postgres_users_data:
+  postgres_tickets_data:
