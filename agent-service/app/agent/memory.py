@@ -1,11 +1,15 @@
 """
 Per-client memory: stores and retrieves the recurring problem patterns for each client.
 """
+import logging
 from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import ClientMemory
+from app.agent.knowledge import index_client_memory
+
+logger = logging.getLogger(__name__)
 
 
 async def get_client_memory_text(client_id: int, db: AsyncSession) -> str:
@@ -53,13 +57,19 @@ async def upsert_client_memory(
         existing.problem_summary = problem_summary
         existing.resolution_summary = resolution_summary
         existing.last_seen = datetime.now(timezone.utc)
+        record = existing
     else:
-        db.add(
-            ClientMemory(
-                client_id=client_id,
-                tic_area=tic_area,
-                problem_summary=problem_summary,
-                resolution_summary=resolution_summary,
-            )
+        record = ClientMemory(
+            client_id=client_id,
+            tic_area=tic_area,
+            problem_summary=problem_summary,
+            resolution_summary=resolution_summary,
         )
+        db.add(record)
     await db.flush()
+    # Index in Qdrant so the profile is searchable by vector similarity.
+    # Non-fatal: embedding failures must not break the main interaction flow.
+    try:
+        await index_client_memory(record)
+    except Exception as exc:
+        logger.warning("[TICBot] Error indexando perfil de cliente %s en Qdrant: %s", client_id, exc)

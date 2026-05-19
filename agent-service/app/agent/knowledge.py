@@ -129,6 +129,51 @@ async def save_qa_to_db(
 
 # ── Client profiles ───────────────────────────────────────────────────────────
 
+async def index_client_memory(memory) -> None:
+    """
+    Embed a ClientMemory record and upsert it into the client_profiles Qdrant collection.
+    Uses a deterministic UUID5 keyed on (client_id, tic_area) so repeated calls
+    overwrite the same point instead of creating duplicates.
+    """
+    text = (
+        f"Problema recurrente: {memory.problem_summary}\n"
+        f"Cómo se resolvió: {memory.resolution_summary or 'sin resolución registrada'}"
+    )
+    vector = await embed_with_retry(text)
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{memory.client_id}:{memory.tic_area}"))
+    client = await get_vector_client()
+    await client.upsert(
+        collection_name=settings.COLLECTION_CLIENTS,
+        points=[
+            PointStruct(
+                id=point_id,
+                vector=vector,
+                payload={
+                    "client_id": memory.client_id,
+                    "tic_area": memory.tic_area or "",
+                    "problem_summary": memory.problem_summary,
+                    "resolution_summary": memory.resolution_summary or "",
+                    "frequency": memory.frequency,
+                },
+            )
+        ],
+    )
+
+
 async def search_client_profile(query: str) -> str:
     results = await semantic_search(query, settings.COLLECTION_CLIENTS)
-    return _format_search_results(results, "perfiles de clientes")
+    if not results:
+        return "No se encontraron casos similares en el historial de clientes."
+    lines = ["Casos similares resueltos con otros clientes:"]
+    for i, r in enumerate(results, 1):
+        area = r.get("tic_area", "sin área")
+        problem = r.get("problem_summary", "")[:250]
+        resolution = r.get("resolution_summary", "sin resolución")[:250]
+        freq = r.get("frequency", 1)
+        score = r.get("score", 0)
+        lines.append(
+            f"  {i}. [{score:.2f}] [{area}] (visto {freq}x)\n"
+            f"     Problema: {problem}\n"
+            f"     Resolución: {resolution}"
+        )
+    return "\n".join(lines)

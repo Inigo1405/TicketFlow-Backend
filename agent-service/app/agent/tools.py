@@ -9,7 +9,7 @@ import httpx
 from langchain_core.tools import tool
 from duckduckgo_search import DDGS
 
-from app.agent.knowledge import search_knowledge, search_qa
+from app.agent.knowledge import search_knowledge, search_qa, search_client_profile
 from app.core.config import settings, create_service_token
 
 
@@ -45,6 +45,12 @@ async def search_knowledge_base(query: str) -> str:
 async def search_past_qa(query: str) -> str:
     """Search past resolved problem-solution pairs (QA database) for similar issues."""
     return await search_qa(query)
+
+
+@tool
+async def search_similar_resolutions(query: str) -> str:
+    """Search the history of problems from ALL clients and how they were resolved. Use this when the internal knowledge base and QA entries are not enough, or to validate your proposed solution against real past cases."""
+    return await search_client_profile(query)
 
 
 # ── Ticket service ────────────────────────────────────────────────────────────
@@ -157,6 +163,6 @@ def make_ticket_status_tools(ticket_id: int) -> list:
 
 # ── Tool sets per mode ────────────────────────────────────────────────────────
 
-CLIENT_TOOLS = [web_search, search_knowledge_base, search_past_qa]
+CLIENT_TOOLS = [web_search, search_knowledge_base, search_past_qa, search_similar_resolutions]
 NOTES_TOOLS = [web_search, search_knowledge_base, search_past_qa, get_all_tickets_summary]
 QA_TOOLS = [get_all_tickets_summary, search_knowledge_base, search_past_qa]
