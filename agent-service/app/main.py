@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.database import init_db
 from app.db.vector_db import init_collections, close_vector_client
-from app.routers import categorize, interact, notes, qa, knowledge, memory
+from app.routers import categorize, interact, notes, qa, knowledge, memory, admin
 
 
 @asynccontextmanager
@@ -37,6 +37,7 @@ app.include_router(notes.router, prefix="/agent", tags=["notes"])
 app.include_router(qa.router, prefix="/agent", tags=["qa"])
 app.include_router(knowledge.router, prefix="/agent", tags=["knowledge"])
 app.include_router(memory.router, prefix="/agent", tags=["memory"])
+app.include_router(admin.router, prefix="/agent", tags=["admin"])
 
 
 @app.get("/agent/health")

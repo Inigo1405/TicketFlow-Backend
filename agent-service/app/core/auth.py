@@ -40,3 +40,12 @@ def require_agent_or_admin(current_user: TokenUser = Depends(get_current_user)) 
             detail="Se requiere rol Agente o Admin",
         )
     return current_user
+
+
+def require_admin(current_user: TokenUser = Depends(get_current_user)) -> TokenUser:
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere rol Admin",
+        )
+    return current_user

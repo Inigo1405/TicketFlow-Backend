@@ -7,7 +7,7 @@ import json
 import re
 from typing import Optional
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -176,4 +176,51 @@ async def run_qa_audit(extra_context: Optional[str] = None) -> str:
     result = await agent.ainvoke(
         {"messages": [HumanMessage(content="Realiza la auditoría de calidad de todos los tickets del sistema.")]}
     )
+    return _extract_last_ai_message(result)
+
+
+# ── 5. Admin privileged chat ───────────────────────────────────────────────────────────
+
+async def run_admin_chat(message: str, history: list[dict], db: AsyncSession) -> str:
+    """
+    Admin privileged chat.
+    History is injected as plain text into the system prompt rather than
+    reconstructed as AIMessage objects.  This avoids the Gemini 400 error
+    caused by missing thought_signature on serialised tool-call turns.
+    """
+    from app.agent.admin_tools import make_admin_tools
+    from app.agent.prompts import ADMIN_CHAT_PROMPT
+    from app.core.config import settings
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    # Use GEMINI_ADMIN_MODEL (Gemini 2.x) instead of the default Gemini 3 model.
+    # Gemini 3 requires thought_signatures on every function call in the ReAct loop,
+    # which langchain-google-genai 2.x does not preserve between steps — causing a
+    # 400 INVALID_ARGUMENT error on the second LLM call.  Gemini 2.x has no such
+    # requirement, so the existing library version works fine.
+    llm = ChatGoogleGenerativeAI(
+        model=settings.GEMINI_ADMIN_MODEL,
+        google_api_key=settings.GEMINI_API_KEY,
+        temperature=0.3,
+    )
+    admin_tools = make_admin_tools(db)
+
+    # Build system prompt: base prompt + prior conversation as plain text.
+    # Never pass prior AI turns as AIMessage objects – that would strip any
+    # thought_signature Gemini embedded, causing INVALID_ARGUMENT on turn 2+.
+    system_prompt = ADMIN_CHAT_PROMPT
+    if history:
+        lines = []
+        for h in history:
+            role = "Admin" if h["role"] == "user" else "TICBot"
+            lines.append(f"{role}: {h['content']}")
+        system_prompt = (
+            ADMIN_CHAT_PROMPT
+            + "\n\n## Conversación anterior (contexto)\n"
+            + "\n".join(lines)
+            + "\n\n---"
+        )
+
+    agent = create_react_agent(llm, admin_tools, prompt=system_prompt)
+    result = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
     return _extract_last_ai_message(result)

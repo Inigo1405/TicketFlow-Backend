@@ -106,6 +106,27 @@ async def clear_memory(client_id: int, current_user: GatewayUser = Depends(get_c
     return proxy_response(upstream)
 
 
+@router.get("/admin/stats")
+async def admin_stats(current_user: GatewayUser = Depends(get_current_user)):
+    upstream = await agent_client.get("/agent/admin/stats", headers=build_auth_headers(current_user))
+    return proxy_response(upstream)
+
+
+@router.get("/admin/memory")
+async def admin_memory(current_user: GatewayUser = Depends(get_current_user)):
+    upstream = await agent_client.get("/agent/admin/memory", headers=build_auth_headers(current_user))
+    return proxy_response(upstream)
+
+
+@router.post("/admin/chat")
+async def admin_chat(request: Request, current_user: GatewayUser = Depends(get_current_user)):
+    body = await request.json()
+    upstream = await agent_client.post(
+        "/agent/admin/chat", json=body, headers=build_auth_headers(current_user)
+    )
+    return proxy_response(upstream)
+
+
 @router.get("/health")
 async def agent_health(current_user: GatewayUser = Depends(get_current_user)):
     upstream = await agent_client.get("/agent/health", headers=build_auth_headers(current_user))

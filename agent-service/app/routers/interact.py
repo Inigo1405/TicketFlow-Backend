@@ -63,9 +63,27 @@ async def interact_with_client(
         db=db,
     )
 
-    # Optionally save as QA
+    # Auto-save QA entry when the agent resolves the ticket
     qa_saved = False
-    if body.save_qa and body.qa_problem_summary and body.qa_solution_summary:
+    async with httpx.AsyncClient(base_url=settings.TICKET_SERVICE_URL, timeout=15.0) as status_client:
+        try:
+            status_resp = await status_client.get(f"/tickets/{ticket_id}", headers=headers)
+            if status_resp.status_code == 200:
+                updated_ticket = status_resp.json()
+                if updated_ticket.get("status") == "resolved":
+                    await save_qa_to_db(
+                        problem=ticket["description"][:1000],
+                        solution=agent_reply[:1000],
+                        tic_area=ticket.get("tic_area"),
+                        source_ticket_id=ticket_id,
+                        db=db,
+                    )
+                    qa_saved = True
+        except Exception:
+            pass  # QA save is best-effort, never block the response
+
+    # Manual QA override (explicit save_qa from caller)
+    if not qa_saved and body.save_qa and body.qa_problem_summary and body.qa_solution_summary:
         await save_qa_to_db(
             problem=body.qa_problem_summary,
             solution=body.qa_solution_summary,
