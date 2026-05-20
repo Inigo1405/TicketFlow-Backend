@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     # Gemini
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.1-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     # Gemini 2.x model for features that use tool calling inside LangGraph.
     # Gemini 3 requires thought_signatures to be preserved across ReAct steps,
     # which langchain-google-genai <3.x does not yet do automatically.
