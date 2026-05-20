@@ -10,12 +10,12 @@ class Settings(BaseSettings):
 
     # Gemini
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.1-flash-lite"
     # Gemini 2.x model for features that use tool calling inside LangGraph.
     # Gemini 3 requires thought_signatures to be preserved across ReAct steps,
     # which langchain-google-genai <3.x does not yet do automatically.
     # gemini-2.0-flash has no thinking mode, so no signatures needed.
-    GEMINI_ADMIN_MODEL: str = "gemini-2.5-flash"
+    GEMINI_ADMIN_MODEL: str = "gemini-3.1-flash-lite"
     GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
 
     # Qdrant
