@@ -170,7 +170,7 @@ services:
     env_file: .env
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
       - "5672:5672"     # comunicación entre servicios
       - "15672:15672"   # panel web
