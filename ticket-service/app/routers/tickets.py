@@ -15,6 +15,7 @@ from app.schemas.ticket import (
 )
 from app.core.config import settings, create_service_token
 from app.core.auth import get_current_user, require_agent_or_admin, TokenUser
+from app.rabbit.publisher import publish_notification
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,13 @@ async def create_ticket(
     # Commit explícito antes de la background task: el agente necesita ver el ticket
     await db.commit()
     background_tasks.add_task(_trigger_categorize, ticket.id)
+    await publish_notification({
+        "user_ids": [current_user.id],
+        "type": "ticket_created",
+        "title": "Ticket creado",
+        "message": f"Tu ticket '{ticket.title}' fue creado y está siendo procesado.",
+        "ticket_id": ticket.id,
+    })
     return ticket
 
 
@@ -187,6 +195,13 @@ async def close_ticket(
 
     ticket.status = "closed"
     await db.flush()
+    await publish_notification({
+        "user_ids": [ticket.created_by],
+        "type": "ticket_closed",
+        "title": "Ticket cerrado",
+        "message": f"El ticket '{ticket.title}' fue cerrado.",
+        "ticket_id": ticket_id,
+    })
     return {}
 
 
@@ -204,6 +219,13 @@ async def resolve_ticket(
 
     ticket.status = "resolved"
     await db.flush()
+    await publish_notification({
+        "user_ids": [ticket.created_by],
+        "type": "ticket_resolved",
+        "title": "Ticket resuelto",
+        "message": f"El ticket '{ticket.title}' fue marcado como resuelto.",
+        "ticket_id": ticket_id,
+    })
     return {}
 
 
@@ -254,4 +276,12 @@ async def add_reply(
     # Disparar interact solo para respuestas visibles del cliente (no internas, no del propio bot)
     if not body.is_internal and current_user.id != 0:
         background_tasks.add_task(_trigger_interact, ticket_id)
+    if current_user.id != ticket.created_by:
+        await publish_notification({
+            "user_ids": [ticket.created_by],
+            "type": "new_reply",
+            "title": "Nueva respuesta en tu ticket",
+            "message": f"Hay una nueva respuesta en tu ticket '{ticket.title}'.",
+            "ticket_id": ticket_id,
+        })
     return reply
