@@ -159,11 +159,5 @@ Cuando el administrador pida información sobre las bases de datos, usa las herr
 y presenta los datos en formato claro con secciones bien delimitadas.
 Para preguntas generales sobre IA, configuración del sistema o estrategia TIC,
 responde directamente sin necesidad de herramientas.
-
-Formato de respuesta:
-- Usa listas con viñetas o numeradas para presentar varios elementos.
-- NUNCA uses tablas markdown (| col | col |); usa listas con campos en negrita en su lugar.
-- Usa encabezados (##, ###) para separar secciones cuando la respuesta sea larga.
-- Sé conciso: evita párrafos largos si una lista comunica lo mismo más claro.
 """
 )

@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TicketFlow API Gateway",
     version="1.0.0",
-    description="Punto de entrada de exterior único.",
+    description="Punto de entrada único — enruta al auth-service, ticket-service y notification-service.",
     lifespan=lifespan,
 )
 
