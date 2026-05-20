@@ -1,48 +1,79 @@
 services:
-
-  # ── Infrastructure ────────────────────────────────────────────────────────
+  # ── Base de datos ──
   postgres-users:
+    container_name: DB-users
     image: postgres:16-alpine
-    container_name: postgres-users
-    restart: unless-stopped
+    restart: on-failure
+    env_file: .env
     environment:
-      POSTGRES_DB: users_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${USER_DB_NAME}
+      POSTGRES_USER: ${USER_DB_USER}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD}
     volumes:
-      - postgres_users_data:/var/lib/postgresql/data
+      - pg_users_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER} -d ${USER_DB_NAME}"]
+      interval: 5s
+      retries: 5
+
+
+  postges-org:
+    container_name: DB-organizations
+    image: postgres:16-alpine
+    restart: on-failure
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${ORG_DB_NAME}
+      POSTGRES_USER: ${ORG_DB_USER}
+      POSTGRES_PASSWORD: ${ORG_DB_PASSWORD}
+    volumes:
+      - pg_org_data:/var/lib/postgresql/data
     ports:
       - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ORG_DB_USER} -d ${ORG_DB_NAME}"]
+      interval: 5s
+      retries: 5
+
 
   postgres-tickets:
+    container_name: DB-tickets
     image: postgres:16-alpine
-    container_name: postgres-tickets
-    restart: unless-stopped
+    restart: on-failure
+    env_file: .env
     environment:
-      POSTGRES_DB: tickets_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${TICKET_DB_NAME}
+      POSTGRES_USER: ${TICKET_DB_USER}
+      POSTGRES_PASSWORD: ${TICKET_DB_PASSWORD}
     volumes:
-      - postgres_tickets_data:/var/lib/postgresql/data
+      - pg_tickets_data:/var/lib/postgresql/data
     ports:
       - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TICKET_DB_USER} -d ${TICKET_DB_NAME}"]
+      interval: 5s
+      retries: 5
+
 
   postgres-agent:
+    container_name: DB-agent
     image: postgres:16-alpine
-    container_name: postgres-agent
-    restart: unless-stopped
+    restart: on-failure
     environment:
       POSTGRES_DB: agent_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
-      - postgres_agent_data:/var/lib/postgresql/data
+      - pg_agent_data:/var/lib/postgresql/data
     ports:
       - "5436:5432"
 
+
   qdrant:
-    image: qdrant/qdrant:latest
     container_name: qdrant
+    image: qdrant/qdrant:latest
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
@@ -50,14 +81,8 @@ services:
       - "6333:6333"
       - "6334:6334"
 
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
 
-  # ── Services ──────────────────────────────────────────────────────────────
+  # ── Servicios ──
   auth-service:
     container_name: auth-service
     build: ./auth-service
@@ -72,6 +97,7 @@ services:
       - postgres-users
       - redis
 
+
   ticket-service:
     container_name: ticket-service
     build: ./ticket-service
@@ -84,6 +110,7 @@ services:
       - "8002:8002"
     depends_on:
       - postgres-tickets
+
 
   agent-service:
     container_name: agent-service
@@ -101,6 +128,7 @@ services:
       - qdrant
       - ticket-service
 
+
   api-gateway:
     container_name: api-gateway
     build: ./api-gateway
@@ -115,13 +143,54 @@ services:
     ports:
       - "3000:8000"   # frontend calls http://localhost:3000/api
     depends_on:
+      - redis
+      - rabbitmq
       - auth-service
       - ticket-service
       - agent-service
-      - redis
+
+
+  # ── Herramientas ──
+  redis:
+    container_name: Redis
+    image: redis:7-alpine
+    restart: on-failure
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3.13-management
+    restart: on-failure
+    env_file: .env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    ports:
+      - "5672:5672"     # comunicación entre servicios
+      - "15672:15672"   # panel web
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
 
 volumes:
-  postgres_users_data:
-  postgres_tickets_data:
-  postgres_agent_data:
+  pg_users_data:
+  pg_org_data:
+  pg_tickets_data:
+  pg_agent_data:
+
+
   qdrant_data:
+
+  rabbitmq_data:
