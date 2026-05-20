@@ -82,7 +82,29 @@ services:
       - "6334:6334"
 
 
+
   # ── Servicios ──
+  api-gateway:
+    container_name: api-gateway
+    build: ./api-gateway
+    restart: on-failure
+    env_file: .env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      TICKET_SERVICE_URL: http://ticket-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8003
+      AGENT_SERVICE_URL: http://agent-service:8004
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:8000"   # frontend calls http://localhost:3000/api
+    depends_on:
+      - redis
+      - rabbitmq
+      - auth-service
+      - ticket-service
+      - agent-service
+  
+
   auth-service:
     container_name: auth-service
     build: ./auth-service
@@ -112,6 +134,13 @@ services:
       - postgres-tickets
 
 
+  notification-service:
+    container_name: notification-service
+    build: ./notification-service
+    env_file: .env
+
+
+
   agent-service:
     container_name: agent-service
     build: ./agent-service
@@ -128,26 +157,6 @@ services:
       - qdrant
       - ticket-service
 
-
-  api-gateway:
-    container_name: api-gateway
-    build: ./api-gateway
-    restart: on-failure
-    env_file: .env
-    environment:
-      AUTH_SERVICE_URL: http://auth-service:8001
-      TICKET_SERVICE_URL: http://ticket-service:8002
-      NOTIFICATION_SERVICE_URL: http://notification-service:8003
-      AGENT_SERVICE_URL: http://agent-service:8004
-      REDIS_URL: redis://redis:6379
-    ports:
-      - "3000:8000"   # frontend calls http://localhost:3000/api
-    depends_on:
-      - redis
-      - rabbitmq
-      - auth-service
-      - ticket-service
-      - agent-service
 
 
   # ── Herramientas ──

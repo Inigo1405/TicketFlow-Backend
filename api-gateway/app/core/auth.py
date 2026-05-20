@@ -1,14 +1,15 @@
-"""
-Valida el JWT localmente (misma SECRET_KEY) sin consultar auth-service en cada petición, 
-lo que lo hace más rápido y evita una dependencia circular.
-Expone al usuario actual como una dataclass simple.
-"""
 from dataclasses import dataclass
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from app.core.config import settings
+from .config import settings
+
+"""
+Valida el JWT localmente (misma SECRET_KEY) sin consultar auth-service en cada petición, 
+lo que lo hace más rápido y evita una dependencia circular.
+Expone al usuario actual como una dataclass simple.
+"""
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

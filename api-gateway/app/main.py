@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TicketFlow API Gateway",
     version="1.0.0",
-    description="Punto de entrada único — enruta al auth-service, ticket-service y notification-service.",
+    description="Punto de entrada de exterior único.",
     lifespan=lifespan,
 )
 
@@ -31,6 +31,7 @@ app.add_middleware(
 )
 app.add_middleware(RequestIDMiddleware)
 
+
 # ── Routers — all under /api ──────────────────────────────────────────────────
 app.include_router(auth.router, prefix="/api")
 app.include_router(tickets.router, prefix="/api")
@@ -38,6 +39,6 @@ app.include_router(notifications.router, prefix="/api")
 app.include_router(agent.router, prefix="/api")
 
 
-@app.get("/api/health")
+@app.get("/health")
 async def health():
     return {"status": "ok", "service": "api-gateway"}

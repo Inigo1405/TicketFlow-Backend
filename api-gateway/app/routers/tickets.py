@@ -8,6 +8,12 @@ from app.core.auth import get_current_user, build_auth_headers, GatewayUser
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
+
+@router.get("/health")
+async def health():
+    return {"status": "ok", "service": "ticket-service"}
+
+
 @router.get("/mine")
 async def my_tickets(current_user: GatewayUser = Depends(get_current_user)):
     upstream = await ticket_client.get("/tickets/mine", headers=build_auth_headers(current_user))

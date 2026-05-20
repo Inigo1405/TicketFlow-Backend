@@ -18,4 +18,8 @@ jobs:
       - name: build all services
         run: docker compose build
 
-      - name: Linter
+      - name: Linter check
+        run: |
+          echo "Ejecutando linters..."
+          pip install ruff
+          ruff check .
