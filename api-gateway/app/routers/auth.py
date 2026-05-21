@@ -28,3 +28,13 @@ async def me(current_user: GatewayUser = Depends(get_current_user)):
         headers={"Authorization": f"Bearer {current_user.raw_token}"},
     )
     return proxy_response(upstream)
+
+
+@router.post("/logout")
+async def logout(current_user: GatewayUser = Depends(get_current_user)):
+    """Proxy POST /auth/logout → auth-service (token required)."""
+    upstream = await auth_client.post(
+        "/auth/logout",
+        headers={"Authorization": f"Bearer {current_user.raw_token}"},
+    )
+    return proxy_response(upstream)

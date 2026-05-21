@@ -1,6 +1,13 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s | %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
 
 from app.db.database import init_db
 from app.db.vector_db import init_collections, close_vector_client
