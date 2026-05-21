@@ -5,6 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
 from app.core.config import settings
+from app.core.redis_client import is_blacklisted
 
 """
 Valida el JWT localmente (misma SECRET_KEY) sin consultar auth-service en cada petición, 
@@ -22,7 +23,7 @@ class GatewayUser:
     raw_token: str
 
 
-def get_current_user(
+async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> GatewayUser:
     if not credentials:
@@ -38,8 +39,17 @@ def get_current_user(
         role = payload.get("role")
         if not user_id or not role:
             raise ValueError("Payload incompleto")
+
+        jti = payload.get("jti")
+        if jti and await is_blacklisted(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sesión cerrada. Inicia sesión nuevamente.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         return GatewayUser(id=int(user_id), role=role, raw_token=token)
-    
+
     except (JWTError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

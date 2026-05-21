@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     SLA_HOURS: int = 24  # Tiempo en horas para que un ticket se considere con SLA incumplido
     AGENT_SERVICE_URL: str = "http://agent-service:8004"
     RABBITMQ_URL: str = "amqp://guest:guest@rabbitmq:5672/"
+    REDIS_URL: str = "redis://redis:6379"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -3,15 +3,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.http_client import close_clients
+from app.core.redis_client import init_redis, close_redis
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import auth, tickets, notifications, agent
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_redis()
     yield
     # Al finalizar el ciclo de vida de la aplicación, cerramos los clientes HTTP para liberar recursos.
     await close_clients()
+    await close_redis()
 
 
 
@@ -32,6 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 
 

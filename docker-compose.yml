@@ -111,7 +111,7 @@ services:
     restart: on-failure
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-users:5432/users_db
+      DATABASE_URL: postgresql+asyncpg://${USER_DB_USER}:${USER_DB_PASSWORD}@postgres-users:5432/${USER_DB_NAME}
       REDIS_URL: redis://redis:6379
     ports:
       - "8001:8001"
@@ -126,7 +126,7 @@ services:
     restart: on-failure
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-tickets:5432/tickets_db
+      DATABASE_URL: postgresql+asyncpg://${TICKET_DB_USER}:${TICKET_DB_PASSWORD}@postgres-tickets:5432/${TICKET_DB_NAME}
       AGENT_SERVICE_URL: http://agent-service:8004
     ports:
       - "8002:8002"

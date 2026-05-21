@@ -1,9 +1,11 @@
+import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -15,6 +17,10 @@ from app.schemas.ticket import (
 )
 from app.core.config import settings, create_service_token
 from app.core.auth import get_current_user, require_agent_or_admin, TokenUser
+from app.core.redis_client import (
+    cache_get, cache_set, invalidate_ticket, invalidate_reply, invalidate_list,
+    LIST_KEY, TTL_LIST, TTL_TICKET,
+)
 from app.rabbit.publisher import publish_notification
 
 logger = logging.getLogger(__name__)
@@ -74,11 +80,19 @@ async def list_tickets(
     db: AsyncSession = Depends(get_db),
     current_user: TokenUser = Depends(get_current_user),
 ):
+    cached = await cache_get(LIST_KEY)
+    if cached:
+        return Response(content=cached, media_type="application/json")
+
     result = await db.execute(select(Ticket).order_by(Ticket.created_at.desc()))
     tickets = result.scalars().all()
     for t in tickets:
         _check_sla(t)
-    return tickets
+
+    data = [TicketSummary.model_validate(t).model_dump(mode="json") for t in tickets]
+    serialized = json.dumps(data)
+    await cache_set(LIST_KEY, serialized, TTL_LIST)
+    return Response(content=serialized, media_type="application/json")
 
 
 # ── GET /tickets/mine ─────────────────────────────────────────────────────────
@@ -103,6 +117,13 @@ async def get_ticket(
     db: AsyncSession = Depends(get_db),
     current_user: TokenUser = Depends(get_current_user),
 ):
+    is_client = current_user.role == "Cliente"
+    cache_key = f"ticket:{ticket_id}:{'public' if is_client else 'full'}"
+
+    cached = await cache_get(cache_key)
+    if cached:
+        return Response(content=cached, media_type="application/json")
+
     result = await db.execute(
         select(Ticket).options(selectinload(Ticket.replies)).where(Ticket.id == ticket_id)
     )
@@ -110,14 +131,14 @@ async def get_ticket(
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket no encontrado")
     _check_sla(ticket)
-    # Clients cannot see internal replies.
-    # IMPORTANT: convert to Pydantic first — mutating ticket.replies on the ORM object
-    # would cascade-delete internal notes from the DB (delete-orphan cascade).
-    if current_user.role == "Cliente":
-        ticket_out = TicketOut.model_validate(ticket)
+
+    ticket_out = TicketOut.model_validate(ticket)
+    if is_client:
         ticket_out.replies = [r for r in ticket_out.replies if not r.is_internal]
-        return ticket_out
-    return ticket
+
+    serialized = ticket_out.model_dump_json()
+    await cache_set(cache_key, serialized, TTL_TICKET)
+    return Response(content=serialized, media_type="application/json")
 
 
 # ── POST /tickets ─────────────────────────────────────────────────────────────
@@ -141,6 +162,7 @@ async def create_ticket(
     ticket = await _get_ticket_with_replies(ticket.id, db)
     # Commit explícito antes de la background task: el agente necesita ver el ticket
     await db.commit()
+    await invalidate_list()
     background_tasks.add_task(_trigger_categorize, ticket.id)
     await publish_notification({
         "user_ids": [current_user.id],
@@ -178,6 +200,7 @@ async def update_ticket(
 
     await db.flush()
     await db.refresh(ticket)
+    await invalidate_ticket(ticket_id)
     return ticket
 
 
@@ -195,6 +218,7 @@ async def close_ticket(
 
     ticket.status = "closed"
     await db.flush()
+    await invalidate_ticket(ticket_id)
     await publish_notification({
         "user_ids": [ticket.created_by],
         "type": "ticket_closed",
@@ -219,6 +243,7 @@ async def resolve_ticket(
 
     ticket.status = "resolved"
     await db.flush()
+    await invalidate_ticket(ticket_id)
     await publish_notification({
         "user_ids": [ticket.created_by],
         "type": "ticket_resolved",
@@ -243,6 +268,7 @@ async def set_ticket_pending(
 
     ticket.status = "pending"
     await db.flush()
+    await invalidate_ticket(ticket_id)
     return {}
 
 
@@ -273,6 +299,7 @@ async def add_reply(
     await db.refresh(reply)
     # Commit explícito antes de la background task: el agente necesita ver la reply
     await db.commit()
+    await invalidate_reply(ticket_id)
     # Disparar interact solo para respuestas visibles del cliente (no internas, no del propio bot)
     if not body.is_internal and current_user.id != 0:
         background_tasks.add_task(_trigger_interact, ticket_id)
