@@ -19,6 +19,10 @@ class Ticket(Base):
     # open | pending | resolved | closed
     notes = Column(Text, nullable=True)
     sla_breached = Column(Boolean, nullable=False, default=False)
+    tic_area = Column(String(50), nullable=False, default="uncategorized")
+    # backend_services | frontend_services | general_tech_support | network_infrastructure
+    # cybersecurity | data_databases | cloud_services | systems_hardware | uncategorized
+    agent_processed = Column(Boolean, nullable=False, default=False)
     created_by = Column(Integer, nullable=False, index=True)  # user id de auth-service
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -34,6 +38,7 @@ class Reply(Base):
     author_id = Column(Integer, nullable=False)
     author_name = Column(String(120), nullable=False)
     text = Column(Text, nullable=False)
+    is_internal = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     ticket = relationship("Ticket", back_populates="replies")

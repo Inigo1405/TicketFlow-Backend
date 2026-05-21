@@ -13,25 +13,23 @@ from app.models.user import User, Base
 
 async def seed():
     engine = create_async_engine(settings.DATABASE_URL, echo=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
-    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_maker() as session:
-        result = await session.execute(select(User).where(User.email == "admin@ticketflow.com"))
+        result = await session.execute(select(User).where(User.email == "usuario@ticketflow.com"))
         if result.scalar_one_or_none():
-            print("Admin ya existe.")
+            print("Usuario ya existe.")
             return
 
-        admin = User(
-            name="Administrador",
-            email="admin@ticketflow.com",
-            hashed_password=hash_password("admin1234"),
-            role="Admin",
+        cliente = User(
+            name="Usuario Demo",
+            email="usuario@ticketflow.com",
+            hashed_password=hash_password("usuario1234"),
+            role="Cliente",
         )
-        session.add(admin)
+        session.add(cliente)
         await session.commit()
-        print("Admin creado: admin@ticketflow.com / admin1234")
+        print("Cliente creado: usuario@ticketflow.com / usuario1234")
 
     await engine.dispose()
 

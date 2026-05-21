@@ -66,6 +66,14 @@ async def resolve_ticket(ticket_id: int, current_user: GatewayUser = Depends(get
     return proxy_response(upstream)
 
 
+@router.patch("/{ticket_id}/pending")
+async def set_ticket_pending(ticket_id: int, current_user: GatewayUser = Depends(get_current_user)):
+    upstream = await ticket_client.patch(
+        f"/tickets/{ticket_id}/pending", headers=build_auth_headers(current_user)
+    )
+    return proxy_response(upstream)
+
+
 @router.post("/{ticket_id}/replies")
 async def add_reply(
     ticket_id: int,

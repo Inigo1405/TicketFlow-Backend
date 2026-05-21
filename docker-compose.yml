@@ -27,6 +27,29 @@ services:
     ports:
       - "5435:5432"
 
+  postgres-agent:
+    image: postgres:16-alpine
+    container_name: postgres-agent
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_agent_data:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -56,10 +79,27 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-tickets:5432/tickets_db
+      AGENT_SERVICE_URL: http://agent-service:8004
     ports:
       - "8002:8002"
     depends_on:
       - postgres-tickets
+
+  agent-service:
+    container_name: agent-service
+    build: ./agent-service
+    restart: on-failure
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-agent:5432/agent_db
+      QDRANT_URL: http://qdrant:6333
+      TICKET_SERVICE_URL: http://ticket-service:8002
+    ports:
+      - "8004:8004"
+    depends_on:
+      - postgres-agent
+      - qdrant
+      - ticket-service
 
   api-gateway:
     container_name: api-gateway
@@ -70,14 +110,18 @@ services:
       AUTH_SERVICE_URL: http://auth-service:8001
       TICKET_SERVICE_URL: http://ticket-service:8002
       NOTIFICATION_SERVICE_URL: http://notification-service:8003
+      AGENT_SERVICE_URL: http://agent-service:8004
       REDIS_URL: redis://redis:6379
     ports:
       - "3000:8000"   # frontend calls http://localhost:3000/api
     depends_on:
       - auth-service
       - ticket-service
+      - agent-service
       - redis
 
 volumes:
   postgres_users_data:
   postgres_tickets_data:
+  postgres_agent_data:
+  qdrant_data:

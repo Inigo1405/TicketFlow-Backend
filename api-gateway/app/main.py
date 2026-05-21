@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.http_client import close_clients
 from app.middleware.request_id import RequestIDMiddleware
-from app.routers import auth, tickets, notifications
+from app.routers import auth, tickets, notifications, agent
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.add_middleware(RequestIDMiddleware)
 app.include_router(auth.router, prefix="/api")
 app.include_router(tickets.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
+app.include_router(agent.router, prefix="/api")
 
 
 @app.get("/api/health")

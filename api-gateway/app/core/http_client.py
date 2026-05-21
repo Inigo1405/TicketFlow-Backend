@@ -11,9 +11,14 @@ _TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0)
 auth_client = httpx.AsyncClient(base_url=settings.AUTH_SERVICE_URL, timeout=_TIMEOUT)
 ticket_client = httpx.AsyncClient(base_url=settings.TICKET_SERVICE_URL, timeout=_TIMEOUT)
 notification_client = httpx.AsyncClient(base_url=settings.NOTIFICATION_SERVICE_URL, timeout=_TIMEOUT)
+agent_client = httpx.AsyncClient(
+    base_url=settings.AGENT_SERVICE_URL,
+    timeout=httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0),  # longer read for LLM
+)
 
 
 async def close_clients():
     await auth_client.aclose()
     await ticket_client.aclose()
     await notification_client.aclose()
+    await agent_client.aclose()
