@@ -7,13 +7,19 @@ on:
     branches: [ main ]
 
 jobs:
-    build-and-test:
-        runs-on: ubuntu-latest
-        timeout-minutes: 10
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: build all services
-              run: docker compose build
+      - name: build all services
+        run: docker compose build
+
+      - name: Linter check
+        run: |
+          echo "Ejecutando linters..."
+          pip install ruff
+          ruff check .

@@ -14,6 +14,7 @@ async def lifespan(app: FastAPI):
     await close_clients()
 
 
+
 app = FastAPI(
     title="TicketFlow API Gateway",
     version="1.0.0",
@@ -21,7 +22,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── Middleware ────────────────────────────────────────────────────────────────
+
+# ── Middleware ──
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],   # En producción, restringir a los dominios frontend específicos
@@ -31,13 +33,16 @@ app.add_middleware(
 )
 app.add_middleware(RequestIDMiddleware)
 
-# ── Routers — all under /api ──────────────────────────────────────────────────
+
+
+# ── Routers — all under /api ──
 app.include_router(auth.router, prefix="/api")
 app.include_router(tickets.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(agent.router, prefix="/api")
 
 
-@app.get("/api/health")
+
+@app.get("/health")
 async def health():
     return {"status": "ok", "service": "api-gateway"}
