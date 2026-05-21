@@ -94,6 +94,26 @@ async def update_user(
     return UserOut.model_validate(user)
 
 
+# ── Endpoints internos (sin auth — solo accesibles en red Docker) ──────────────
+
+@router.get("/internal/by-role/{role}", include_in_schema=False)
+async def _users_by_role_internal(role: str, db: AsyncSession = Depends(get_db)):
+    """Devuelve id/email/name de todos los usuarios con el rol dado."""
+    result = await db.execute(select(User).where(User.role == role))
+    users = result.scalars().all()
+    return [{"id": u.id, "email": u.email, "name": u.name} for u in users]
+
+
+@router.get("/internal/{user_id}", include_in_schema=False)
+async def _user_by_id_internal(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Devuelve id/email/name de un usuario por ID."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {}
+    return {"id": user.id, "email": user.email, "name": user.name}
+
+
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,

@@ -9,7 +9,10 @@ NotificationType = Literal[
     "ticket_closed",
     "ticket_pending",
     "new_reply",
+    "new_client_reply",
     "sla_breached",
+    "ticket_escalated",
+    "critical_ticket",
     "agent_note",
 ]
 
@@ -38,9 +41,10 @@ class NotificationCreate(BaseModel):
 
 class NotificationEvent(BaseModel):
     # Payload que otros servicios publican en RabbitMQ.
-    # user_ids: lista de destinatarios (puede ser uno o varios, e.g. todos los agentes).
-    user_ids: list[int]
+    user_ids: list[int] = []          # destinatarios específicos (IDs)
+    notify_roles: list[str] = []      # roles a notificar — notification-service resuelve los IDs
     type: NotificationType
     title: str
     message: str
     ticket_id: Optional[int] = None
+    send_email: bool = False          # si True, envía email a los user_ids vía EmailJS

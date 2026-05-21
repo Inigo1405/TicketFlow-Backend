@@ -97,3 +97,14 @@ async def invalidate_reply(ticket_id: int) -> None:
 async def invalidate_list() -> None:
     """Invalidate only the ticket list cache."""
     await cache_delete(LIST_KEY)
+
+
+async def cache_setnx(key: str, value: str) -> bool:
+    """Set key only if it does not exist. Returns True if the key was set (first time)."""
+    if _redis is None:
+        return True  # fail open: si no hay Redis, siempre notificar
+    try:
+        return bool(await _redis.setnx(key, value))
+    except Exception as exc:
+        logger.warning("[Redis] cache_setnx error: %s", exc)
+        return True  # fail open
