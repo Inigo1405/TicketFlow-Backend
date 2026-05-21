@@ -3,16 +3,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+from app.db.database import engine
+from app.models import user as user_model
+from app.routers import auth, users
+from app.core.redis_client import init_redis, close_redis
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s | %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
-
-from app.db.database import engine
-from app.models import user as user_model
-from app.routers import auth, users
-from app.core.redis_client import init_redis, close_redis
 
 
 @asynccontextmanager

@@ -3,12 +3,12 @@ Script para crear el usuario Admin inicial.
 Uso: python seed.py
 """
 import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models.user import User, Base
+from app.models.user import User
 
 
 USERS = [

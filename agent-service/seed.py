@@ -8,12 +8,11 @@ Es idempotente: omite la carga si ya existen registros en knowledge_base.
 import asyncio
 import uuid
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select, func
 from qdrant_client.http.models import PointStruct
 
 from app.core.config import settings
-from app.db.database import Base
 from app.db.vector_db import get_vector_client
 from app.agent.embeddings import embed_with_retry
 from app.models.agent import KnowledgeBase, QAEntry

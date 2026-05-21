@@ -6,7 +6,6 @@ from typing import Optional
 
 from qdrant_client.http.models import PointStruct
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.agent.embeddings import embed_with_retry
 from app.core.config import settings

@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse
 
 from app.core.http_client import ticket_client
 from app.core.proxy import proxy_response

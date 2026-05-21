@@ -3,7 +3,7 @@ Redis client for ticket-service.
 Provides ticket list and detail caching.
 Fails open — if Redis is unavailable operations are skipped gracefully.
 """
-import json
+
 import logging
 from typing import Optional
 
