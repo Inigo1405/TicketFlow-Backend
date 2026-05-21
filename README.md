@@ -2,9 +2,39 @@
 Proyecto Final de Sistemas Distribuidos (Backend)
 
 ## Descripción
-
+TicketFlow es una aplicación web moderna para la gestión de tickets de soporte técnico, diseñada con una arquitectura de microservicios. El backend se compone de varios servicios independientes que se comunican entre sí para ofrecer funcionalidades como autenticación, gestión de tickets, notificaciones y asistencia inteligente mediante un agente conversacional (TICBot).
 
 ## Instalación y Ejecución
+
+**Requisitos**
+- Docker y Docker Compose.
+
+**Pasos (local con Docker)**
+1. Clona el repositorio:
+	```bash
+	git clone https://github.com/Inigo1405/TicketFlow-Backend.git
+	cd TicketFlow-Backend
+	```
+2. Copia `.env.example` a `.env` y completa las variables necesarias (SECRET_KEY, ALGORITHM, DB, Redis, RabbitMQ, EmailJS y Gemini si aplica).
+3. Levanta los servicios:
+	```bash
+	docker compose up --build
+	```
+4. Acceso local:
+	- API Gateway: `http://localhost:3000`
+	- auth-service: `http://localhost:8001`
+	- ticket-service: `http://localhost:8002`
+	- notification-service: `http://localhost:8003`
+	- agent-service: `http://localhost:8004`
+5. Usuarios demo (solo si la base de datos estaba vacia en el primer arranque):
+	- admin@ticketflow.com / admin1234
+	- agente@ticketflow.com / agente1234
+	- usuario@ticketflow.com / usuario1234
+
+**Detener servicios**
+```bash
+docker compose down
+```
 
 
 ## Arquitectura del sistema

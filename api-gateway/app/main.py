@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.http_client import close_clients
 from app.core.redis_client import init_redis, close_redis
@@ -36,6 +37,7 @@ app = FastAPI(
 
 
 # ── Middleware ──
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],   # En producción, restringir a los dominios frontend específicos
