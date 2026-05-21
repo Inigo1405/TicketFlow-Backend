@@ -170,22 +170,6 @@ services:
       - ticket-service
 
 
-  # ! Eliminar
-  postgres-notifications:
-    container_name: DB-notifications
-    image: postgres:16-alpine
-    restart: on-failure
-    environment:
-      POSTGRES_DB: notifications_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - pg_notifications_data:/var/lib/postgresql/data
-    ports:
-      - "5437:5432"
-
-
-
   # ── Herramientas ──
   redis:
     container_name: Redis
@@ -230,5 +214,4 @@ volumes:
   qdrant_data:
 
   rabbitmq_data:
-
-  pg_notifications_data:
+  
