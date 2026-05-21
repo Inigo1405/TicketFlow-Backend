@@ -94,11 +94,11 @@ services:
     restart: on-failure
     env_file: .env
     environment:
-      AUTH_SERVICE_URL: http://auth-service:8001
-      TICKET_SERVICE_URL: http://ticket-service:8002
-      NOTIFICATION_SERVICE_URL: http://notification-service:8003
-      AGENT_SERVICE_URL: http://agent-service:8004
-      REDIS_URL: redis://redis:6379
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      TICKET_SERVICE_URL: ${TICKET_SERVICE_URL}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      AGENT_SERVICE_URL: ${AGENT_SERVICE_URL}
+      REDIS_URL: ${REDIS_URL}
     ports:
       - "3000:8000"   # frontend calls http://localhost:3000/api
     depends_on:
@@ -115,8 +115,9 @@ services:
     restart: on-failure
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${USER_DB_USER}:${USER_DB_PASSWORD}@postgres-users:5432/${USER_DB_NAME}
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: ${USER_DB_URL}
+      DATABASE_URL_ORG: ${ORG_DB_URL}
+      REDIS_URL: ${REDIS_URL}
     ports:
       - "8001:8001"
     depends_on:
@@ -130,8 +131,8 @@ services:
     restart: on-failure
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${TICKET_DB_USER}:${TICKET_DB_PASSWORD}@postgres-tickets:5432/${TICKET_DB_NAME}
-      AGENT_SERVICE_URL: http://agent-service:8004
+      DATABASE_URL: ${TICKET_DB_URL}
+      AGENT_SERVICE_URL: ${AGENT_SERVICE_URL}
     ports:
       - "8002:8002"
     depends_on:
@@ -144,13 +145,13 @@ services:
     restart: on-failure
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-notifications:5432/notifications_db
-      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      DATABASE_URL: ${TICKET_DB_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
     ports:
       - "8003:8003"
     depends_on:
-      - postgres-notifications
       - rabbitmq
+      - postgres-tickets
 
 
   agent-service:
@@ -159,15 +160,16 @@ services:
     restart: on-failure
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-agent:5432/agent_db
+      DATABASE_URL: ${AGENT_DB_URL}
       QDRANT_URL: http://qdrant:6333
-      TICKET_SERVICE_URL: http://ticket-service:8002
+      TICKET_SERVICE_URL: ${TICKET_SERVICE_URL}
     ports:
       - "8004:8004"
     depends_on:
       - postgres-agent
       - qdrant
       - ticket-service
+
 
 
   # ── Herramientas ──
@@ -210,8 +212,6 @@ volumes:
   pg_tickets_data:
   pg_agent_data:
 
-
   qdrant_data:
-
   rabbitmq_data:
   
