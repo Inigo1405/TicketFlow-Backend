@@ -7,7 +7,6 @@ from app.middleware.request_id import RequestIDMiddleware
 from app.routers import auth, tickets, notifications, agent
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
@@ -22,7 +21,6 @@ app = FastAPI(
     description="Punto de entrada único — enruta al auth-service, ticket-service y notification-service.",
     lifespan=lifespan,
 )
-
 
 
 # ── Middleware ──

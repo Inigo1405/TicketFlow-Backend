@@ -61,10 +61,11 @@ services:
     container_name: DB-agent
     image: postgres:16-alpine
     restart: on-failure
+    env_file: .env
     environment:
-      POSTGRES_DB: agent_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${AGENT_DB_NAME}
+      POSTGRES_USER: ${AGENT_DB_USER}
+      POSTGRES_PASSWORD: ${AGENT_DB_PASSWORD}
     volumes:
       - pg_agent_data:/var/lib/postgresql/data
     ports:
@@ -83,6 +84,27 @@ services:
 
 
   # ── Servicios ──
+  api-gateway:
+    container_name: api-gateway
+    build: ./api-gateway
+    restart: on-failure
+    env_file: .env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      TICKET_SERVICE_URL: http://ticket-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8003
+      AGENT_SERVICE_URL: http://agent-service:8004
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:8000"   # frontend calls http://localhost:3000/api
+    depends_on:
+      - redis
+      - rabbitmq
+      - auth-service
+      - ticket-service
+      - agent-service
+
+
   auth-service:
     container_name: auth-service
     build: ./auth-service
@@ -112,6 +134,21 @@ services:
       - postgres-tickets
 
 
+  notification-service:
+    container_name: notification-service
+    build: ./notification-service
+    restart: on-failure
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-notifications:5432/notifications_db
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+    ports:
+      - "8003:8003"
+    depends_on:
+      - postgres-notifications
+      - rabbitmq
+
+
   agent-service:
     container_name: agent-service
     build: ./agent-service
@@ -129,26 +166,7 @@ services:
       - ticket-service
 
 
-  api-gateway:
-    container_name: api-gateway
-    build: ./api-gateway
-    restart: on-failure
-    env_file: .env
-    environment:
-      AUTH_SERVICE_URL: http://auth-service:8001
-      TICKET_SERVICE_URL: http://ticket-service:8002
-      NOTIFICATION_SERVICE_URL: http://notification-service:8003
-      AGENT_SERVICE_URL: http://agent-service:8004
-      REDIS_URL: redis://redis:6379
-    ports:
-      - "3000:8000"   # frontend calls http://localhost:3000/api
-    depends_on:
-      - redis
-      - rabbitmq
-      - auth-service
-      - ticket-service
-      - agent-service
-
+  # ! Eliminar
   postgres-notifications:
     container_name: DB-notifications
     image: postgres:16-alpine
@@ -162,19 +180,7 @@ services:
     ports:
       - "5437:5432"
 
-  notification-service:
-    container_name: notification-service
-    build: ./notification-service
-    restart: on-failure
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres-notifications:5432/notifications_db
-      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
-    ports:
-      - "8003:8003"
-    depends_on:
-      - postgres-notifications
-      - rabbitmq
+
 
   # ── Herramientas ──
   redis:
