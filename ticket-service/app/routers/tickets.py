@@ -1,9 +1,12 @@
+import asyncio
+import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -15,6 +18,11 @@ from app.schemas.ticket import (
 )
 from app.core.config import settings, create_service_token
 from app.core.auth import get_current_user, require_agent_or_admin, TokenUser
+from app.core.redis_client import (
+    cache_get, cache_set, cache_setnx, invalidate_ticket, invalidate_reply, invalidate_list,
+    LIST_KEY, TTL_LIST, TTL_TICKET,
+)
+from app.rabbit.publisher import publish_notification
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +55,46 @@ async def _trigger_interact(ticket_id: int) -> None:
         logger.warning("No se pudo disparar interact para ticket #%s: %s", ticket_id, exc)
 
 
-def _check_sla(ticket: Ticket) -> None:
-    """Mark ticket as sla_breached if open/pending beyond SLA_HOURS."""
-    if ticket.status in ("open", "pending") and not ticket.sla_breached:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.SLA_HOURS)
+def _check_sla(ticket: Ticket) -> dict:
+    """Mark ticket as sla_breached if open/pending beyond SLA_HOURS.
+    Returns dict of SLA events to trigger: {'sla_breached': True, 'sla_escalated': True}.
+    """
+    events: dict[str, bool] = {}
+    if ticket.status in ("open", "pending"):
+        now = datetime.now(timezone.utc)
         created = ticket.created_at
         if created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
-        if created < cutoff:
+        if created < now - timedelta(hours=settings.SLA_HOURS) and not ticket.sla_breached:
             ticket.sla_breached = True
+            events["sla_breached"] = True
+        if created < now - timedelta(hours=settings.SLA_ESCALATION_HOURS):
+            events["sla_escalated"] = True
+    return events
+
+
+async def _sla_notify_once(ticket: Ticket, event_type: str) -> None:
+    """Send SLA notification only once per ticket using Redis SETNX dedup."""
+    dedup_key = f"sla_notif:{ticket.id}:{event_type}"
+    first_time = await cache_setnx(dedup_key, "1")
+    if not first_time:
+        return
+    if event_type == "sla_breached":
+        await publish_notification({
+            "notify_roles": ["Admin"],
+            "type": "sla_breached",
+            "title": f"SLA incumplido — Ticket #{ticket.id}",
+            "message": f"El ticket '{ticket.title}' supera las {settings.SLA_HOURS}h sin resolverse.",
+            "ticket_id": ticket.id,
+        })
+    elif event_type == "sla_escalated":
+        await publish_notification({
+            "notify_roles": ["Admin"],
+            "type": "ticket_escalated",
+            "title": f"Escalación — Ticket #{ticket.id}",
+            "message": f"El ticket '{ticket.title}' lleva más de {settings.SLA_ESCALATION_HOURS}h sin resolverse.",
+            "ticket_id": ticket.id,
+        })
 
 async def _get_ticket_with_replies(ticket_id: int, db: AsyncSession) -> Ticket:
     result = await db.execute(
@@ -73,11 +112,27 @@ async def list_tickets(
     db: AsyncSession = Depends(get_db),
     current_user: TokenUser = Depends(get_current_user),
 ):
+    cached = await cache_get(LIST_KEY)
+    if cached:
+        return Response(content=cached, media_type="application/json")
+
     result = await db.execute(select(Ticket).order_by(Ticket.created_at.desc()))
     tickets = result.scalars().all()
+
+    sla_tasks = []
     for t in tickets:
-        _check_sla(t)
-    return tickets
+        events = _check_sla(t)
+        if events.get("sla_breached"):
+            sla_tasks.append(_sla_notify_once(t, "sla_breached"))
+        if events.get("sla_escalated"):
+            sla_tasks.append(_sla_notify_once(t, "sla_escalated"))
+    if sla_tasks:
+        await asyncio.gather(*sla_tasks, return_exceptions=True)
+
+    data = [TicketSummary.model_validate(t).model_dump(mode="json") for t in tickets]
+    serialized = json.dumps(data)
+    await cache_set(LIST_KEY, serialized, TTL_LIST)
+    return Response(content=serialized, media_type="application/json")
 
 
 # ── GET /tickets/mine ─────────────────────────────────────────────────────────
@@ -102,6 +157,13 @@ async def get_ticket(
     db: AsyncSession = Depends(get_db),
     current_user: TokenUser = Depends(get_current_user),
 ):
+    is_client = current_user.role == "Cliente"
+    cache_key = f"ticket:{ticket_id}:{'public' if is_client else 'full'}"
+
+    cached = await cache_get(cache_key)
+    if cached:
+        return Response(content=cached, media_type="application/json")
+
     result = await db.execute(
         select(Ticket).options(selectinload(Ticket.replies)).where(Ticket.id == ticket_id)
     )
@@ -109,14 +171,14 @@ async def get_ticket(
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket no encontrado")
     _check_sla(ticket)
-    # Clients cannot see internal replies.
-    # IMPORTANT: convert to Pydantic first — mutating ticket.replies on the ORM object
-    # would cascade-delete internal notes from the DB (delete-orphan cascade).
-    if current_user.role == "Cliente":
-        ticket_out = TicketOut.model_validate(ticket)
+
+    ticket_out = TicketOut.model_validate(ticket)
+    if is_client:
         ticket_out.replies = [r for r in ticket_out.replies if not r.is_internal]
-        return ticket_out
-    return ticket
+
+    serialized = ticket_out.model_dump_json()
+    await cache_set(cache_key, serialized, TTL_TICKET)
+    return Response(content=serialized, media_type="application/json")
 
 
 # ── POST /tickets ─────────────────────────────────────────────────────────────
@@ -140,7 +202,15 @@ async def create_ticket(
     ticket = await _get_ticket_with_replies(ticket.id, db)
     # Commit explícito antes de la background task: el agente necesita ver el ticket
     await db.commit()
+    await invalidate_list()
     background_tasks.add_task(_trigger_categorize, ticket.id)
+    await publish_notification({
+        "user_ids": [current_user.id],
+        "type": "ticket_created",
+        "title": "Ticket creado",
+        "message": f"Tu ticket '{ticket.title}' fue creado y está siendo procesado.",
+        "ticket_id": ticket.id,
+    })
     return ticket
 
 
@@ -159,6 +229,8 @@ async def update_ticket(
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket no encontrado")
 
+    old_priority = ticket.priority
+
     if body.priority is not None:
         ticket.priority = body.priority
     if body.notes is not None:
@@ -170,6 +242,17 @@ async def update_ticket(
 
     await db.flush()
     await db.refresh(ticket)
+    await invalidate_ticket(ticket_id)
+
+    if body.priority == "critical" and old_priority != "critical":
+        await publish_notification({
+            "notify_roles": ["Admin"],
+            "type": "critical_ticket",
+            "title": f"Ticket #{ticket_id} — Prioridad crítica",
+            "message": f"El ticket '{ticket.title}' fue escalado a prioridad crítica.",
+            "ticket_id": ticket_id,
+        })
+
     return ticket
 
 
@@ -187,6 +270,15 @@ async def close_ticket(
 
     ticket.status = "closed"
     await db.flush()
+    await invalidate_ticket(ticket_id)
+    await publish_notification({
+        "user_ids": [ticket.created_by],
+        "type": "ticket_closed",
+        "title": "Ticket cerrado",
+        "message": f"El ticket '{ticket.title}' fue cerrado.",
+        "ticket_id": ticket_id,
+        "send_email": True,
+    })
     return {}
 
 
@@ -202,8 +294,28 @@ async def resolve_ticket(
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket no encontrado")
 
+    # Idempotencia: si ya está resuelto no reenviar notificaciones
+    if ticket.status == "resolved":
+        return {}
+
     ticket.status = "resolved"
     await db.flush()
+    await invalidate_ticket(ticket_id)
+    await publish_notification({
+        "user_ids": [ticket.created_by],
+        "type": "ticket_resolved",
+        "title": "Ticket resuelto",
+        "message": f"El ticket '{ticket.title}' fue marcado como resuelto.",
+        "ticket_id": ticket_id,
+        "send_email": True,
+    })
+    await publish_notification({
+        "notify_roles": ["Admin"],
+        "type": "ticket_resolved",
+        "title": f"Ticket #{ticket_id} resuelto",
+        "message": f"El ticket '{ticket.title}' fue marcado como resuelto.",
+        "ticket_id": ticket_id,
+    })
     return {}
 
 
@@ -221,6 +333,7 @@ async def set_ticket_pending(
 
     ticket.status = "pending"
     await db.flush()
+    await invalidate_ticket(ticket_id)
     return {}
 
 
@@ -251,7 +364,27 @@ async def add_reply(
     await db.refresh(reply)
     # Commit explícito antes de la background task: el agente necesita ver la reply
     await db.commit()
+    await invalidate_reply(ticket_id)
     # Disparar interact solo para respuestas visibles del cliente (no internas, no del propio bot)
     if not body.is_internal and current_user.id != 0:
         background_tasks.add_task(_trigger_interact, ticket_id)
+    if current_user.role == "Cliente":
+        # Cliente respondió → notificar a admins
+        await publish_notification({
+            "notify_roles": ["Admin"],
+            "type": "new_client_reply",
+            "title": f"Respuesta de cliente — Ticket #{ticket_id}",
+            "message": f"El cliente respondió en el ticket '{ticket.title}'.",
+            "ticket_id": ticket_id,
+        })
+    elif current_user.id != ticket.created_by:
+        # Agente/bot respondió → notificar al cliente por app y por email
+        await publish_notification({
+            "user_ids": [ticket.created_by],
+            "type": "new_reply",
+            "title": "Nueva respuesta en tu ticket",
+            "message": f"Hay una nueva respuesta en tu ticket '{ticket.title}'.",
+            "ticket_id": ticket_id,
+            "send_email": True,
+        })
     return reply

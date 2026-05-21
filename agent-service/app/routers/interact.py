@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import TokenUser, get_current_user
 from app.core.config import settings, create_service_token
 from app.db.database import get_db
-from app.agent.graph import run_interact
+from app.agent.graph import run_interact, generate_qa_solution_summary
 from app.agent.memory import upsert_client_memory
 from app.agent.knowledge import save_qa_to_db
 from app.schemas.agent import InteractResult
@@ -71,9 +71,10 @@ async def interact_with_client(
             if status_resp.status_code == 200:
                 updated_ticket = status_resp.json()
                 if updated_ticket.get("status") == "resolved":
+                    solution_summary = await generate_qa_solution_summary(updated_ticket)
                     await save_qa_to_db(
                         problem=ticket["description"][:1000],
-                        solution=agent_reply[:1000],
+                        solution=solution_summary,
                         tic_area=ticket.get("tic_area"),
                         source_ticket_id=ticket_id,
                         db=db,

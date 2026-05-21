@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production-use-a-long-random-secret"
     ALGORITHM: str = "HS256"
     SLA_HOURS: int = 24  # Tiempo en horas para que un ticket se considere con SLA incumplido
+    SLA_ESCALATION_HOURS: int = 48  # Horas sin resolver para notificar escalación
     AGENT_SERVICE_URL: str = "http://agent-service:8004"
+    RABBITMQ_URL: str = "amqp://guest:guest@rabbitmq:5672/"
+    REDIS_URL: str = "redis://redis:6379"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

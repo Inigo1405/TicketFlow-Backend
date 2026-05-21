@@ -7,8 +7,7 @@ import json
 import re
 from typing import Optional
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import SystemMessage, HumanMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.llm import get_llm
@@ -25,13 +24,74 @@ from app.agent.tools import CLIENT_TOOLS, NOTES_TOOLS, QA_TOOLS, make_ticket_sta
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _extract_last_ai_message(result: dict) -> str:
-    for msg in reversed(result["messages"]):
-        content = getattr(msg, "content", None)
-        tool_calls = getattr(msg, "tool_calls", None)
-        if content and not tool_calls:
-            return content
-    return "TICBot no pudo generar una respuesta."
+async def _tic_react(
+    llm,
+    tools: list,
+    system_prompt: str,
+    user_message: str,
+    max_tool_rounds: int = 4,
+) -> str:
+    """
+    Custom ReAct loop that avoids the Gemini 3 thought_signature issue.
+
+    Gemini 3.x embeds a thought_signature inside every FunctionCall part and
+    REQUIRES those signatures back in the next turn.  LangGraph's
+    create_react_agent accumulates AIMessage(tool_calls=[...]) in the history
+    and never re-attaches the signatures → 400 INVALID_ARGUMENT on the 2nd
+    tool call.
+
+    This loop never sends tool-call AIMessages back to the model.  Instead:
+    - Each round starts from a clean [SystemMessage, HumanMessage] pair.
+    - Tool results are injected as plain text into the next HumanMessage.
+    """
+    tool_map = {t.name: t for t in tools}
+    llm_with_tools = llm.bind_tools(tools) if tools else llm
+    accumulated = user_message
+
+    for round_num in range(max_tool_rounds):
+        if round_num == 0:
+            human_text = accumulated
+        else:
+            human_text = (
+                accumulated
+                + "\n\nCon esta información, redacta tu respuesta. "
+                "Si necesitas más datos, consulta más herramientas. "
+                "Si corresponde cambiar el estado del ticket "
+                "(resolve_ticket, close_ticket, set_ticket_pending), "
+                "llama a esa herramienta en este mismo paso antes de dar tu respuesta final."
+            )
+
+        response = await llm_with_tools.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=human_text)]
+        )
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            return response.content or "TICBot no pudo generar una respuesta."
+
+        results_text = []
+        for tc in tool_calls:
+            name = tc["name"]
+            args = tc.get("args", {})
+            tool = tool_map.get(name)
+            if tool is None:
+                results_text.append(f"[{name}]: Herramienta no encontrada.")
+                continue
+            try:
+                result = await tool.ainvoke(args)
+                results_text.append(f"[{name}]: {result}")
+            except Exception as exc:
+                results_text.append(f"[{name}]: Error — {exc}")
+
+        accumulated = accumulated + "\n\nResultados de herramientas:\n" + "\n".join(results_text)
+
+    # Max rounds exhausted — final call without tools
+    final = await llm.ainvoke(
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=accumulated + "\n\nRedacta ahora tu respuesta final."),
+        ]
+    )
+    return final.content or "TICBot no pudo generar una respuesta."
 
 
 # ── 1. Categorization ─────────────────────────────────────────────────────────
@@ -96,7 +156,6 @@ async def run_interact(
 
     llm = get_llm(temperature=0.4)
     ticket_tools = make_ticket_status_tools(ticket["id"])
-    agent = create_react_agent(llm, CLIENT_TOOLS + ticket_tools, prompt=system_prompt)
 
     # Build conversation thread (public replies only — internal notes are not shown to clients)
     public_replies = [
@@ -127,8 +186,7 @@ async def run_interact(
             "Responde al cliente para ayudarle con este problema."
         )
 
-    result = await agent.ainvoke({"messages": [HumanMessage(content=human_content)]})
-    return _extract_last_ai_message(result)
+    return await _tic_react(llm, CLIENT_TOOLS + ticket_tools, system_prompt, human_content)
 
 
 # ── 3. Internal notes ─────────────────────────────────────────────────────────
@@ -146,7 +204,6 @@ async def run_notes(ticket: dict, knowledge_ctx: str = None, qa_ctx: str = None)
     system_prompt = internal_notes_prompt(knowledge_context=combined_knowledge)
 
     llm = get_llm(temperature=0.2)
-    agent = create_react_agent(llm, NOTES_TOOLS, prompt=system_prompt)
 
     human_content = (
         f"Ticket #{ticket['id']}: {ticket['title']}\n"
@@ -157,8 +214,7 @@ async def run_notes(ticket: dict, knowledge_ctx: str = None, qa_ctx: str = None)
         "Genera la nota interna para el equipo TIC."
     )
 
-    result = await agent.ainvoke({"messages": [HumanMessage(content=human_content)]})
-    return _extract_last_ai_message(result)
+    return await _tic_react(llm, NOTES_TOOLS, system_prompt, human_content)
 
 
 # ── 4. QA Audit ───────────────────────────────────────────────────────────────
@@ -171,33 +227,59 @@ async def run_qa_audit(extra_context: Optional[str] = None) -> str:
     system_prompt = qa_audit_prompt(tickets_context=tickets_ctx)
 
     llm = get_llm(temperature=0.2)
-    agent = create_react_agent(llm, QA_TOOLS, prompt=system_prompt)
-
-    result = await agent.ainvoke(
-        {"messages": [HumanMessage(content="Realiza la auditoría de calidad de todos los tickets del sistema.")]}
+    return await _tic_react(
+        llm,
+        QA_TOOLS,
+        system_prompt,
+        "Realiza la auditoría de calidad de todos los tickets del sistema.",
     )
-    return _extract_last_ai_message(result)
 
 
-# ── 5. Admin privileged chat ───────────────────────────────────────────────────────────
+# ── 5. QA solution summary ───────────────────────────────────────────────────
+
+async def generate_qa_solution_summary(ticket: dict) -> str:
+    """
+    Generate a concise technical description of the solution applied to a ticket.
+    Uses the full reply thread (internal + public) for accuracy.
+    Stored in QA entries instead of the polite closing message.
+    """
+    llm = get_llm(temperature=0.1)
+    replies = ticket.get("replies", [])
+    thread = "\n".join(
+        f"[{'INTERNO' if r.get('is_internal') else r.get('author_name', 'Agente')}]: {r['text']}"
+        for r in replies
+    )
+    human_content = (
+        f"Ticket #{ticket['id']}: {ticket['title']}\n"
+        f"Descripción: {ticket['description']}\n"
+        f"Área: {ticket.get('tic_area', 'general_tech_support')}\n\n"
+        f"Hilo completo:\n{thread}\n\n"
+        "Genera una descripción técnica breve de la SOLUCIÓN aplicada (máximo 2 oraciones). "
+        "Describe QUÉ SE HIZO para resolver el problema, no el cierre conversacional. "
+        "Ejemplo correcto: 'Se restableció la contraseña del usuario desde el panel de autoservicio. "
+        "Se verificó el acceso correcto al sistema.'"
+    )
+    response = await llm.ainvoke(
+        [
+            SystemMessage(content="Eres un técnico TIC. Resume soluciones de tickets de soporte de forma concisa y técnica."),
+            HumanMessage(content=human_content),
+        ]
+    )
+    return response.content.strip()
+
+
+# ── 6. Admin privileged chat ──────────────────────────────────────────────────
 
 async def run_admin_chat(message: str, history: list[dict], db: AsyncSession) -> str:
     """
-    Admin privileged chat.
-    History is injected as plain text into the system prompt rather than
-    reconstructed as AIMessage objects.  This avoids the Gemini 400 error
-    caused by missing thought_signature on serialised tool-call turns.
+    Admin privileged chat using _tic_react to avoid thought_signature errors.
+    History is injected as plain text into the system prompt.
     """
     from app.agent.admin_tools import make_admin_tools
     from app.agent.prompts import ADMIN_CHAT_PROMPT
     from app.core.config import settings
     from langchain_google_genai import ChatGoogleGenerativeAI
 
-    # Use GEMINI_ADMIN_MODEL (Gemini 2.x) instead of the default Gemini 3 model.
-    # Gemini 3 requires thought_signatures on every function call in the ReAct loop,
-    # which langchain-google-genai 2.x does not preserve between steps — causing a
-    # 400 INVALID_ARGUMENT error on the second LLM call.  Gemini 2.x has no such
-    # requirement, so the existing library version works fine.
     llm = ChatGoogleGenerativeAI(
         model=settings.GEMINI_ADMIN_MODEL,
         google_api_key=settings.GEMINI_API_KEY,
@@ -205,15 +287,13 @@ async def run_admin_chat(message: str, history: list[dict], db: AsyncSession) ->
     )
     admin_tools = make_admin_tools(db)
 
-    # Build system prompt: base prompt + prior conversation as plain text.
-    # Never pass prior AI turns as AIMessage objects – that would strip any
-    # thought_signature Gemini embedded, causing INVALID_ARGUMENT on turn 2+.
+    # Inject prior conversation as plain text — never as AIMessage objects.
     system_prompt = ADMIN_CHAT_PROMPT
     if history:
-        lines = []
-        for h in history:
-            role = "Admin" if h["role"] == "user" else "TICBot"
-            lines.append(f"{role}: {h['content']}")
+        lines = [
+            f"{'Admin' if h['role'] == 'user' else 'TICBot'}: {h['content']}"
+            for h in history
+        ]
         system_prompt = (
             ADMIN_CHAT_PROMPT
             + "\n\n## Conversación anterior (contexto)\n"
@@ -221,6 +301,4 @@ async def run_admin_chat(message: str, history: list[dict], db: AsyncSession) ->
             + "\n\n---"
         )
 
-    agent = create_react_agent(llm, admin_tools, prompt=system_prompt)
-    result = await agent.ainvoke({"messages": [HumanMessage(content=message)]})
-    return _extract_last_ai_message(result)
+    return await _tic_react(llm, admin_tools, system_prompt, message)

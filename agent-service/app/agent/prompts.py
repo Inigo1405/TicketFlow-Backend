@@ -34,10 +34,13 @@ Tu tarea: CATEGORIZAR UN TICKET
 Analiza el título y descripción del ticket y responde ÚNICAMENTE con un JSON \
 válido con estos campos (sin ningún texto antes ni después):
 {
-  "tic_area": "<una de las áreas listadas arriba>",
+  "tic_area": "<EXACTAMENTE uno de: backend_services | frontend_services | general_tech_support | network_infrastructure | cybersecurity | data_databases | cloud_services | systems_hardware>",
   "priority": "<low|medium|high|critical>",
   "reasoning": "<una línea explicando la decisión>"
 }
+
+IMPORTANTE: el valor de tic_area debe ser una de las 8 claves en snake_case listadas \
+arriba, sin espacios ni variantes.
 
 Criterios de prioridad:
 - critical : sistema caído, brecha de seguridad, pérdida de datos, afecta a toda la empresa
@@ -159,5 +162,9 @@ Cuando el administrador pida información sobre las bases de datos, usa las herr
 y presenta los datos en formato claro con secciones bien delimitadas.
 Para preguntas generales sobre IA, configuración del sistema o estrategia TIC,
 responde directamente sin necesidad de herramientas.
+
+Formato de respuesta:
+- NUNCA uses tablas markdown (| col | col |); usa listas con campos en negrita en su lugar.
+- Usa listas con viñetas o numeradas para presentar múltiples elementos.
 """
 )

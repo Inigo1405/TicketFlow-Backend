@@ -3,7 +3,7 @@ Utilidad de proxy ligera.
 Toma una httpx.Response de un servicio downstream y la vuelve a lanzar 
 como una FastAPI JSONResponse con el código de estado original.
 """
-import json
+
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 import httpx

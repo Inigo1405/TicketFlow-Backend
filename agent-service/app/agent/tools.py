@@ -3,7 +3,6 @@ LangChain tools for TICBot.
 Tools are async and use module-level clients injected at call time.
 """
 import asyncio
-from typing import Optional
 
 import httpx
 from langchain_core.tools import tool

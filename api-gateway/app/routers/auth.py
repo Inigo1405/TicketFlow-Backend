@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse
 
 from app.core.http_client import auth_client
 from app.core.proxy import proxy_response
@@ -25,6 +24,16 @@ async def me(current_user: GatewayUser = Depends(get_current_user)):
     """Proxy GET /auth/me → auth-service (token required)."""
     upstream = await auth_client.get(
         "/auth/me",
+        headers={"Authorization": f"Bearer {current_user.raw_token}"},
+    )
+    return proxy_response(upstream)
+
+
+@router.post("/logout")
+async def logout(current_user: GatewayUser = Depends(get_current_user)):
+    """Proxy POST /auth/logout → auth-service (token required)."""
+    upstream = await auth_client.post(
+        "/auth/logout",
         headers={"Authorization": f"Bearer {current_user.raw_token}"},
     )
     return proxy_response(upstream)
